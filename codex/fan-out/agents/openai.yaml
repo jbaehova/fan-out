@@ -1,0 +1,5 @@
+interface:
+  display_name: "Fan-Out"
+  short_description: "Parallel explorer, worker, and test delegation"
+  default_prompt: "Use $fan-out to split this task across explorer, worker, test, and validation subagents, then synthesize the result."
+  brand_color: "#2563EB"
