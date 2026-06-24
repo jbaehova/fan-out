@@ -31,6 +31,22 @@ Use fan-out across the whole workflow, not only during discovery.
 4. Validate and review: delegate test authoring, test fixes, targeted reruns, read-only review, or log analysis when those tasks can run independently. Use explorers for read-only validation and workers for validation tasks that may edit files.
 5. Integrate: review worker outputs, resolve conflicts, run or confirm final validation, and synthesize one final answer.
 
+## Plan-Mode Handoff
+
+When `$fan-out` is active while Codex is in plan mode, the final plan shown before an implementation confirmation must carry the fan-out requirement into the next turn. A simple user confirmation such as "yes" or "implement this plan" may not restate `$fan-out`, so the plan itself must make fan-out part of the implementation contract.
+
+In the plan, include a concise fan-out implementation note that:
+
+- States that implementation should continue as a fan-out workflow after approval.
+- Lists the planned implementation, test, and validation workstreams with the intended `explorer` or `worker` agent type.
+- Defines the owned write scope for every planned `worker`.
+- Says which work, if any, will stay in the main thread and why.
+- Requires final integration, validation, conflict resolution, and delegation coverage reporting.
+
+Put this note inside the final plan itself, not only in surrounding explanation. Before asking for approval, verify that the plan contains an explicit fan-out implementation note; if it does not, revise the plan before presenting it.
+
+Do not present a fan-out plan that implies the main thread should perform all implementation after approval unless the work is too small, strictly linear, or has overlapping write scopes. If implementation must stay in the main thread, say that explicitly in the plan and still delegate independent discovery, test, review, or validation work where practical.
+
 ## Workstream Design
 
 Before spawning agents, define independent workstreams.
