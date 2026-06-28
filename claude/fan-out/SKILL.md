@@ -11,7 +11,8 @@ Use this skill as a parallel delegation protocol. Split the user's request into 
 
 - Use only when the user explicitly asks for fan-out, subagents, parallel delegation, one-agent-per-item work, or invokes `/fan-out`.
 - Do not spawn subagents just because a task is complex.
-- Do not fan out for trivial tasks, one-shot shell commands, direct Q&A, small one-file edits, or workflows with strict linear dependencies.
+- Fan out only when it pays for itself: it must cut wall-clock time or keep noisy output out of the main conversation. Otherwise stay single-threaded — N subagents cost ~N× the tokens.
+- Do not fan out for trivial tasks, one-shot shell commands, direct Q&A, small one-file edits, or workflows where every step is strictly sequential. A linear dependency between stages still allows fan-out within a stage whose internal work is independent.
 - Use at most 10 subagents. Spawn only as many as genuinely independent workstreams require.
 - Use built-in Claude Code subagents by their documented names:
   - `Explore` for read-only codebase discovery, targeted search, architecture mapping, log/test analysis, review, and hypothesis checks.
@@ -34,7 +35,7 @@ Use this skill as a parallel delegation protocol. Split the user's request into 
 
 ## Lifecycle Protocol
 
-Use fan-out across the whole workflow, not only during discovery.
+Use fan-out across the whole workflow, not only during discovery. Work in waves: parallel discovery → integrate → parallel implementation. Stages run in sequence; each stage fans out internally.
 
 1. Discover: use `Explore` for independent read-only questions, architecture mapping, risk checks, or log/test analysis.
 2. Plan ownership: identify implementation, testing, and validation workstreams before spawning edit-capable agents, then repeat this ownership pass after `Explore` results narrow the fix. Record the intended agent type and owned write scope for each `general-purpose` candidate.
@@ -51,6 +52,7 @@ For integrated tasks that start with investigation and continue into code change
 - Spawn independent validation or review workstreams in parallel when they do not depend on unfinished edits.
 - Keep implementation in the main conversation only for overlapping, tiny, or strictly sequential changes, and record that reason for final Delegation Coverage.
 - Do not count an early read-only wave as sufficient fan-out for a non-trivial coding task when implementation or test edit-capable scopes become available after discovery.
+- Hand edit-capable agents a context packet, not a vague summary: file paths/lines, confirmed facts, open assumptions, no-go areas — mapped from the `Explore` output into the subagent's Context and Read scope.
 
 ## Plan-Mode Handoff
 
@@ -91,15 +93,18 @@ Split by one of these axes:
 - Competing hypothesis.
 - Independent user-requested checklist item.
 
-Avoid duplicate assignments. If two agents would need the same write scope, do not run them as parallel edit-capable subagents. Stage the work, use `Explore` first, or keep the overlapping implementation in the main thread. Parallel edit-capable agents must own disjoint files, modules, or narrowly defined responsibilities.
+Avoid duplicate assignments. If two agents would need the same write scope, do not run them as parallel edit-capable subagents. Stage the work, use `Explore` first, or keep the overlapping implementation in the main thread. Parallel edit-capable agents must own disjoint files, modules, or narrowly defined responsibilities. Owned write scope is a convention, not enforced — the runtime won't block out-of-scope edits. On real overlap risk, isolate instead of trusting the prompt: spawn with `isolation: "worktree"` and merge results.
+
+Disjoint files aren't enough — agents also collide on shared state: git index/locks, ports/dev servers, DB schema/migrations, build/test caches. Don't let concurrent agents run shared git ops, bind the same port, change schema, or run the full build/test runner; the manager does these serially after integration.
 
 ## Spawning Rules
 
 - Spawn independent agents in parallel when possible.
 - Make each delegation prompt self-contained. Include only the task-local context the subagent needs.
+- Before spawning, log a one-line manifest per agent — type, objective, read/write scope, stop condition — for auditability. Keep it to one line.
 - Name the intended built-in agent type explicitly: `Explore`, `Plan`, or `general-purpose`.
 - For `Explore`, specify thoroughness when useful: quick, medium, or very thorough.
-- Do not set model, effort, isolation, permissions, or background behavior unless the user requested it or the task has a clear reason.
+- Do not set model, effort, isolation, permissions, or background behavior unless the user requested it or there's a clear reason (overlap risk between parallel edit-capable agents justifies worktree isolation).
 - While subagents run, do useful non-overlapping work in the main conversation.
 - Wait for all required results before final synthesis.
 - Close or stop completed background agents after their results are integrated when Claude Code exposes that control.
@@ -164,7 +169,7 @@ Rules:
 - If the assigned scope is insufficient, stop and report the blocker instead of expanding edits.
 - Follow existing codebase patterns.
 - Keep changes narrow and behavior-focused.
-- Run the narrowest relevant validation available, especially for test-focused assignments.
+- Run the narrowest validation for your own scope (for test tasks, the affected test); do not trigger the full or shared build/test runner — the manager runs that after integration.
 
 Return a concise result with:
 1. Changed files
@@ -200,6 +205,13 @@ Return:
 3. Planning risks or open questions
 ```
 
+## Failure Handling
+
+Partial failure (timeout, error, empty, scope overrun) is a normal parallel outcome, not an exception.
+
+- Retry once with a tighter scope or prompt; if it fails again, fall back to the main conversation or a reduced scope.
+- Proceed on partial results only if the failed stream isn't required for correctness; else stop and repair. Never silently drop it.
+
 ## Conflict Handling
 
 Treat subagent outputs as evidence, not authority.
@@ -208,6 +220,7 @@ When agents disagree:
 
 - Prefer direct code evidence, tests, logs, and precise file references.
 - Inspect the relevant source yourself if the conflict affects the final answer or implementation.
+- Verify load-bearing claims even without a conflict: a single uncontested result can cite hallucinated file/line refs, so confirm one or two yourself before relying on them.
 - Report material conflicts explicitly.
 - Do not average conflicting recommendations.
 - If edit-capable changes overlap despite the plan, integrate one ownership area at a time and preserve unrelated user or agent changes.
@@ -229,8 +242,11 @@ Use this structure when relevant, adapting labels to the user's language:
 **Validation**
 [Tests or commands run and results; if not run, explain why]
 
+**Failed / Skipped Workstreams**
+[Say none if all completed; otherwise list each, why it failed or was skipped, and the impact on the result]
+
 **Delegation Coverage**
-[State which Explore, Plan, general-purpose, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned edit-capable subagents. For non-trivial coding tasks with no edit-capable or validation subagent, explain why.]
+[State which Explore, Plan, general-purpose, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned edit-capable subagents, and the cost/benefit that justified fan-out (wall-clock or context relief). For non-trivial coding tasks with no edit-capable or validation subagent, explain why.]
 
 **Recommended Next Step**
 [The most practical next action, or up to three when useful]

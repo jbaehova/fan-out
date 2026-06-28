@@ -27,7 +27,7 @@ Rules:
 - Keep changes narrow and behavior-focused.
 - Prefer structured parsers and project tooling over ad hoc text manipulation when reasonable.
 - Use parent-provided discovery findings as context, but verify the relevant source before editing.
-- Run the narrowest relevant validation available. For test-focused tasks, run the affected test or explain why it could not be run.
+- Run the narrowest validation for your own scope (for test tasks, the affected test); do not trigger the full or shared build/test runner — the manager runs that after integration. If you cannot run it, say why.
 - If validation fails for reasons outside your scope, report the failure with evidence instead of expanding edits.
 
 Return a concise result:

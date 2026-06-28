@@ -11,7 +11,8 @@ Use this skill as a parallel delegation protocol. Split the user's request into 
 
 - Use only when the user explicitly asks for fan-out, subagents, parallel delegation, one-agent-per-item work, or invokes `/fan-out`.
 - Do not spawn subagents just because a task is complex.
-- Do not fan out for trivial tasks, one-shot shell commands, direct Q&A, small one-file edits, or workflows with strict linear dependencies.
+- Fan out only when it pays for itself: it must cut wall-clock time or keep noisy output out of the main Agent. Otherwise stay single-threaded — N subagents cost ~N× the tokens.
+- Do not fan out for trivial tasks, one-shot shell commands, direct Q&A, small one-file edits, or workflows where every step is strictly sequential. A linear dependency between stages still allows fan-out within a stage whose internal work is independent.
 - Use at most 10 subagents. Spawn only as many as genuinely independent workstreams require.
 - Use Cursor built-in subagents by their documented names:
   - `explore` for codebase search, architecture mapping, read-only investigation, review, and hypothesis checks.
@@ -34,7 +35,7 @@ Use this skill as a parallel delegation protocol. Split the user's request into 
 
 ## Lifecycle Protocol
 
-Use fan-out across the whole workflow, not only during discovery.
+Use fan-out across the whole workflow, not only during discovery. Work in waves: parallel discovery → integrate → parallel implementation. Stages run in sequence; each stage fans out internally.
 
 1. Discover: use `explore` for independent read-only questions, architecture mapping, risk checks, or codebase search.
 2. Plan ownership: identify implementation, testing, browser, shell, and validation workstreams before spawning agents, then repeat this ownership pass after `explore`, `bash`, or `browser` results narrow the fix. Record the intended agent type and owned write scope for every `fan-out-worker` candidate.
@@ -51,6 +52,7 @@ For integrated tasks that start with investigation and continue into code change
 - Spawn independent `bash`, `browser`, or `explore` validation/review workstreams in parallel when they do not depend on unfinished edits.
 - Keep implementation in the main Agent only for overlapping, tiny, or strictly sequential changes, or when `fan-out-worker` is unavailable; record that reason for final Delegation Coverage.
 - Do not count an early read-only or command/browser wave as sufficient fan-out for a non-trivial coding task when implementation or test worker scopes become available after discovery.
+- Hand edit-capable agents a context packet, not a vague summary: file paths/lines, confirmed facts, open assumptions, no-go areas — mapped from the `explore` output into the `fan-out-worker`'s Context and Read scope.
 
 ## Plan-Mode Handoff
 
@@ -92,12 +94,15 @@ Split by one of these axes:
 - Competing hypothesis.
 - Independent user-requested checklist item.
 
-Avoid duplicate assignments. If two agents would need the same write scope, do not run them as parallel edit-capable subagents. Stage the work, use `explore` first, or keep the overlapping implementation in the main Agent. Parallel edit-capable agents must own disjoint files, modules, or narrowly defined responsibilities.
+Avoid duplicate assignments. If two agents would need the same write scope, do not run them as parallel edit-capable subagents. Stage the work, use `explore` first, or keep the overlapping implementation in the main Agent. Parallel edit-capable agents must own disjoint files, modules, or narrowly defined responsibilities. Owned write scope is a convention, not enforced — the runtime won't block out-of-scope edits. On real overlap risk, isolate instead of trusting the prompt: use a separate branch or worktree, or have the agent return a diff to apply.
+
+Disjoint files aren't enough — agents also collide on shared state: git index/locks, ports/dev servers, DB schema/migrations, build/test caches. Don't let concurrent agents run shared git ops, bind the same port, change schema, or run the full build/test runner; the manager does these serially after integration.
 
 ## Spawning Rules
 
 - Spawn independent agents in parallel when possible.
 - Make each delegation prompt self-contained. Include only the task-local context the subagent needs.
+- Before spawning, log a one-line manifest per agent — type, objective, read/write scope, stop condition — for auditability. Keep it to one line.
 - Name the intended agent type explicitly: `explore`, `bash`, `browser`, or `fan-out-worker`.
 - Do not set model, background behavior, or other subagent config unless the user requested it or the task has a clear reason.
 - While subagents run, do useful non-overlapping work in the main Agent.
@@ -210,7 +215,7 @@ Rules:
 - If the assigned scope is insufficient, stop and report the blocker instead of expanding edits.
 - Follow existing codebase patterns.
 - Keep changes narrow and behavior-focused.
-- Run the narrowest relevant validation available, especially for test-focused assignments.
+- Run the narrowest validation for your own scope (for test tasks, the affected test); do not trigger the full or shared build/test runner — the manager runs that after integration.
 
 Return a concise result with:
 1. Changed files
@@ -228,6 +233,13 @@ If `fan-out-worker` is not available:
 - Still fan out read-only discovery, command validation, browser checks, and log analysis.
 - In the final synthesis, explicitly say implementation stayed in the main Agent because Cursor has no built-in general edit-capable subagent and `fan-out-worker` was unavailable.
 
+## Failure Handling
+
+Partial failure (timeout, error, empty, scope overrun) is a normal parallel outcome, not an exception.
+
+- Retry once with a tighter scope or prompt; if it fails again, fall back to the main Agent or a reduced scope.
+- Proceed on partial results only if the failed stream isn't required for correctness; else stop and repair. Never silently drop it.
+
 ## Conflict Handling
 
 Treat subagent outputs as evidence, not authority.
@@ -236,6 +248,7 @@ When agents disagree:
 
 - Prefer direct code evidence, tests, logs, screenshots, browser observations, and precise file references.
 - Inspect the relevant source yourself if the conflict affects the final answer or implementation.
+- Verify load-bearing claims even without a conflict: a single uncontested result can cite hallucinated file/line refs, so confirm one or two yourself before relying on them.
 - Report material conflicts explicitly.
 - Do not average conflicting recommendations.
 - If edit-capable changes overlap despite the plan, integrate one ownership area at a time and preserve unrelated user or agent changes.
@@ -257,8 +270,11 @@ Use this structure when relevant, adapting labels to the user's language:
 **Validation**
 [Tests, browser checks, builds, or commands run and results; if not run, explain why]
 
+**Failed / Skipped Workstreams**
+[Say none if all completed; otherwise list each, why it failed or was skipped, and the impact on the result]
+
 **Delegation Coverage**
-[State which explore, bash, browser, fan-out-worker, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned edit-capable subagents. For non-trivial coding tasks with no edit-capable or validation subagent, explain why.]
+[State which explore, bash, browser, fan-out-worker, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned edit-capable subagents, and the cost/benefit that justified fan-out (wall-clock or context relief). For non-trivial coding tasks with no edit-capable or validation subagent, explain why.]
 
 **Recommended Next Step**
 [The most practical next action, or up to three when useful]

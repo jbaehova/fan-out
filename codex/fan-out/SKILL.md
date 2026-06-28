@@ -11,7 +11,8 @@ Use this skill as a parallel delegation protocol, not as a persona system. Creat
 
 - Use only when the user explicitly asks for fan-out, subagents, parallel delegation, one-agent-per-item work, or invokes `$fan-out`.
 - Do not spawn subagents just because a task is complex.
-- Do not fan out for trivial tasks, one-shot shell commands, direct Q&A, small one-file edits, or workflows with a strict linear dependency.
+- Fan out only when it pays for itself: it must cut wall-clock time or keep noisy output out of the main thread. Otherwise stay single-threaded — N subagents cost ~N× the tokens.
+- Do not fan out for trivial tasks, one-shot shell commands, direct Q&A, small one-file edits, or workflows where every step is strictly sequential. A linear dependency between stages still allows fan-out within a stage whose internal work is independent.
 - Use at most 10 subagents. Do not enforce a minimum; spawn only as many as genuinely independent workstreams require.
 - Use built-in agents:
   - `explorer` for read-only investigation, review, test/log analysis, architecture mapping, and hypothesis checking.
@@ -20,11 +21,12 @@ Use this skill as a parallel delegation protocol, not as a persona system. Creat
 - For non-trivial coding tasks, actively look for implementation and test workstreams that can be delegated to workers. If no worker or validation subagent is used, explain why in the final synthesis.
 - For tasks that include both discovery and code changes, treat discovery agents as the first wave only. After discovery results are integrated, reassess implementation, test, and validation workstreams and spawn workers for independent edit-capable scopes whenever practical.
 - Do not create unnecessary personas.
+- This bans role-play and backstory, not one-line task framing — "investigate the token refresh/revocation bug" is fine; "you are a world-class security architect" is just noise.
 - Do not use custom agents unless the user explicitly names one.
 
 ## Lifecycle Protocol
 
-Use fan-out across the whole workflow, not only during discovery.
+Use fan-out across the whole workflow, not only during discovery. Work in waves: parallel discovery → integrate → parallel implementation. Stages run in sequence; each stage fans out internally.
 
 1. Discover: use explorers for independent read-only questions, architecture mapping, risk checks, or log/test analysis.
 2. Plan ownership: identify possible implementation, testing, and validation workstreams before spawning agents, then repeat this ownership pass after explorer results narrow the fix. Record the intended agent type and owned write scope for each worker candidate.
@@ -41,6 +43,7 @@ For integrated tasks that start with investigation and continue into code change
 - Spawn independent validation or review workstreams in parallel when they do not depend on unfinished edits.
 - Keep implementation in the main thread only for overlapping, tiny, or strictly sequential changes, and record that reason for final Delegation Coverage.
 - Do not count an early explorer-only wave as sufficient fan-out for a non-trivial coding task when implementation or test worker scopes become available after discovery.
+- Hand workers a context packet, not a vague summary: file paths/lines, confirmed facts, open assumptions, no-go areas — mapped from the explorer output into the worker's Context and Read scope.
 
 ## Plan-Mode Handoff
 
@@ -81,12 +84,15 @@ Split by one of these axes:
 - Competing hypothesis.
 - Independent user-requested checklist item.
 
-Avoid duplicate assignments. If two agents would need the same write scope, do not run them as parallel workers. Stage the work, use explorers first, or keep the overlapping implementation in the main thread. Parallel workers must own disjoint files, modules, or narrowly defined responsibilities.
+Avoid duplicate assignments. If two agents would need the same write scope, do not run them as parallel workers. Stage the work, use explorers first, or keep the overlapping implementation in the main thread. Parallel workers must own disjoint files, modules, or narrowly defined responsibilities. Owned write scope is a convention, not enforced — the runtime won't block out-of-scope edits. On real overlap risk, isolate instead of trusting the prompt: use a separate branch or worktree, or have the worker return a diff to apply.
+
+Disjoint files aren't enough — workers also collide on shared state: git index/locks, ports/dev servers, DB schema/migrations, build/test caches. Don't let concurrent agents run shared git ops, bind the same port, change schema, or run the full build/test runner; the manager does these serially after integration.
 
 ## Spawning Rules
 
 - Spawn independent agents in parallel when possible.
 - Make each subagent prompt self-contained. Omit conversation history unless the agent truly needs it.
+- Before spawning, log a one-line manifest per agent — type, objective, read/write scope, stop condition — for auditability. Keep it to one line.
 - Do not set model, reasoning effort, or service tier unless the user requested it or there is a clear task-specific reason.
 - While agents run, do useful non-overlapping work in the main thread.
 - Wait for all required results before final synthesis.
@@ -146,7 +152,7 @@ Rules:
 - If the assigned scope is insufficient, stop and report the blocker instead of expanding edits.
 - Follow existing codebase patterns.
 - Keep changes narrow and behavior-focused.
-- Run the narrowest relevant validation available, especially for test-focused assignments.
+- Run the narrowest validation for your own scope (for test tasks, the affected test); do not trigger the full or shared build/test runner — the manager runs that after integration.
 
 Return a concise result with:
 1. Changed files
@@ -154,6 +160,13 @@ Return a concise result with:
 3. Validation run and result
 4. Risks, blockers, or follow-up needed
 ```
+
+## Failure Handling
+
+Partial failure (timeout, error, empty, scope overrun) is a normal parallel outcome, not an exception.
+
+- Retry once with a tighter scope or prompt; if it fails again, fall back to the main thread or a reduced scope.
+- Proceed on partial results only if the failed stream isn't required for correctness; else stop and repair. Never silently drop it.
 
 ## Conflict Handling
 
@@ -163,6 +176,7 @@ When agents disagree:
 
 - Prefer direct code evidence, tests, logs, and precise file references.
 - Inspect the relevant source yourself if the conflict affects the final answer or implementation.
+- Verify load-bearing claims even without a conflict: a single uncontested result can cite hallucinated file/line refs, so confirm one or two yourself before relying on them.
 - Report material conflicts explicitly.
 - Do not average conflicting recommendations.
 - If worker changes overlap despite the plan, integrate one ownership area at a time and preserve unrelated user or agent changes.
@@ -184,8 +198,11 @@ Use this structure when relevant, adapting labels to the user's language:
 **Validation**
 [Tests or commands run and results; if not run, explain why]
 
+**Failed / Skipped Workstreams**
+[Say none if all completed; otherwise list each, why it failed or was skipped, and the impact on the result]
+
 **Delegation Coverage**
-[State which explorer, worker, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned workers. For non-trivial coding tasks with no worker or validation subagent, explain why.]
+[State which explorer, worker, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned workers, and the cost/benefit that justified fan-out (wall-clock or context relief). For non-trivial coding tasks with no worker or validation subagent, explain why.]
 
 **Recommended Next Step**
 [The most practical next action, or up to three when useful]
