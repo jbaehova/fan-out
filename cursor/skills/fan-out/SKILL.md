@@ -1,6 +1,6 @@
 ---
 name: fan-out
-description: Orchestrate Cursor subagents for explicit fan-out work. Use only when the user invokes /fan-out or asks Cursor to fan out, spawn subagents, delegate work in parallel, run separate agents per question/subsystem/file group/hypothesis, or synthesize parallel investigations. Do not use for ordinary complex tasks unless parallel delegation is explicitly requested.
+description: Orchestrate Cursor subagents for explicit fan-out work across discovery, implementation, testing, validation, browser checks, command analysis, review, and synthesis. Use only when the user invokes /fan-out or asks Cursor to fan out, spawn subagents, delegate work in parallel, run separate agents per question/subsystem/file group/hypothesis, or synthesize parallel work. Do not use for ordinary complex tasks unless parallel delegation is explicitly requested.
 ---
 
 # FAN-OUT
@@ -19,6 +19,8 @@ Use this skill as a parallel delegation protocol. Split the user's request into 
   - `browser` for browser automation, UI inspection, DOM/screenshot-heavy validation, and web workflows through MCP browser tools.
 - Cursor has no built-in general edit-capable worker subagent. For parallel implementation or test edits, use the project custom subagent `fan-out-worker` from `.cursor/agents/fan-out-worker.md`.
 - If `fan-out-worker` is unavailable, do edit-capable implementation in the main Agent and use built-in subagents only for read-only research, command output, browser checks, or validation.
+- For non-trivial coding tasks, actively look for implementation and test workstreams that can be delegated to `fan-out-worker` when available. If no edit-capable or validation subagent is used, explain why in the final synthesis.
+- For tasks that include both discovery and code changes, treat built-in read-only/validation subagents as the first wave only. After discovery results are integrated, reassess implementation, test, and validation workstreams and spawn `fan-out-worker` for independent edit-capable scopes whenever available.
 - Do not create one-off generic personas. Add new custom subagents only when the user explicitly asks or a durable repeated workflow is clear.
 
 ## Cursor Subagent Constraints
@@ -35,10 +37,20 @@ Use this skill as a parallel delegation protocol. Split the user's request into 
 Use fan-out across the whole workflow, not only during discovery.
 
 1. Discover: use `explore` for independent read-only questions, architecture mapping, risk checks, or codebase search.
-2. Plan ownership: identify implementation, testing, browser, shell, and validation workstreams before spawning agents. Record the intended agent type and owned write scope for every `fan-out-worker` candidate.
-3. Implement: use `fan-out-worker` for independent code or test changes with disjoint write scopes. Keep implementation in the main Agent when the change is too small, strictly linear, or would require overlapping edits.
+2. Plan ownership: identify implementation, testing, browser, shell, and validation workstreams before spawning agents, then repeat this ownership pass after `explore`, `bash`, or `browser` results narrow the fix. Record the intended agent type and owned write scope for every `fan-out-worker` candidate.
+3. Implement: before making edits in the main Agent, run the discovery-to-implementation checkpoint below. Use `fan-out-worker` for independent code or test changes with disjoint write scopes. Keep implementation in the main Agent when the change is too small, strictly linear, or would require overlapping edits.
 4. Validate and review: use `bash` for noisy test/build/log runs, `browser` for UI/browser checks, `explore` for read-only review, and `fan-out-worker` only when validation may require scoped file edits.
 5. Integrate: inspect subagent outputs, resolve conflicts, run or confirm final validation, and synthesize one final answer.
+
+## Discovery-to-Implementation Checkpoint
+
+For integrated tasks that start with investigation and continue into code changes, run this checkpoint after read-only or validation subagent results are integrated and before editing:
+
+- Convert findings into concrete implementation candidates: affected files/modules, behavior changes, tests, browser checks, shell validations, and validation commands.
+- Split candidates into disjoint write scopes and spawn `fan-out-worker` for any edit-capable scope that can be owned independently, including test-only scopes.
+- Spawn independent `bash`, `browser`, or `explore` validation/review workstreams in parallel when they do not depend on unfinished edits.
+- Keep implementation in the main Agent only for overlapping, tiny, or strictly sequential changes, or when `fan-out-worker` is unavailable; record that reason for final Delegation Coverage.
+- Do not count an early read-only or command/browser wave as sufficient fan-out for a non-trivial coding task when implementation or test worker scopes become available after discovery.
 
 ## Plan-Mode Handoff
 
@@ -246,7 +258,7 @@ Use this structure when relevant, adapting labels to the user's language:
 [Tests, browser checks, builds, or commands run and results; if not run, explain why]
 
 **Delegation Coverage**
-[State which explore, bash, browser, fan-out-worker, test, or validation workstreams were used. For non-trivial coding tasks with no edit-capable or validation subagent, explain why.]
+[State which explore, bash, browser, fan-out-worker, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned edit-capable subagents. For non-trivial coding tasks with no edit-capable or validation subagent, explain why.]
 
 **Recommended Next Step**
 [The most practical next action, or up to three when useful]

@@ -1,6 +1,6 @@
 ---
 name: fan-out
-description: Orchestrate Claude Code subagents for explicit fan-out work. Use only when the user invokes /fan-out or asks Claude to fan out, spawn subagents, delegate work in parallel, run separate agents per question/subsystem/file group/hypothesis, or synthesize parallel investigations. Do not use for ordinary complex tasks unless parallel delegation is explicitly requested.
+description: Orchestrate Claude Code subagents for explicit fan-out work across discovery, implementation, testing, validation, review, and synthesis. Use only when the user invokes /fan-out or asks Claude to fan out, spawn subagents, delegate work in parallel, run separate agents per question/subsystem/file group/hypothesis, or synthesize parallel work. Do not use for ordinary complex tasks unless parallel delegation is explicitly requested.
 ---
 
 # FAN-OUT
@@ -18,6 +18,8 @@ Use this skill as a parallel delegation protocol. Split the user's request into 
   - `Plan` only when Claude is already in plan mode and needs read-only research before presenting a plan.
   - `general-purpose` for edit-capable or action-oriented work: bounded implementation, test creation/fixes, validation repairs, and multi-step operations.
 - Treat `general-purpose` as the built-in edit-capable subagent. Do not invent alternate built-in agent names.
+- For non-trivial coding tasks, actively look for implementation and test workstreams that can be delegated to `general-purpose`. If no edit-capable or validation subagent is used, explain why in the final synthesis.
+- For tasks that include both discovery and code changes, treat read-only subagents as the first wave only. After discovery results are integrated, reassess implementation, test, and validation workstreams and spawn `general-purpose` subagents for independent edit-capable scopes whenever practical.
 - Do not use custom agents unless the user explicitly names one.
 - Do not use Claude Code helper agents such as `statusline-setup` or `claude-code-guide`; they are automatic helpers, not fan-out subagents.
 
@@ -35,10 +37,20 @@ Use this skill as a parallel delegation protocol. Split the user's request into 
 Use fan-out across the whole workflow, not only during discovery.
 
 1. Discover: use `Explore` for independent read-only questions, architecture mapping, risk checks, or log/test analysis.
-2. Plan ownership: identify implementation, testing, and validation workstreams before spawning edit-capable agents. Record the intended agent type and owned write scope for each `general-purpose` candidate.
-3. Implement: use `general-purpose` for independent code or test changes with disjoint write scopes. Keep implementation in the main thread when the change is too small, strictly linear, or would require overlapping edits.
+2. Plan ownership: identify implementation, testing, and validation workstreams before spawning edit-capable agents, then repeat this ownership pass after `Explore` results narrow the fix. Record the intended agent type and owned write scope for each `general-purpose` candidate.
+3. Implement: before making edits in the main conversation, run the discovery-to-implementation checkpoint below. Use `general-purpose` for independent code or test changes with disjoint write scopes. Keep implementation in the main conversation when the change is too small, strictly linear, or would require overlapping edits.
 4. Validate and review: delegate test authoring, test fixes, targeted reruns, read-only review, or log analysis when those tasks can run independently. Use `Explore` for read-only validation and `general-purpose` for validation tasks that may edit files.
 5. Integrate: inspect subagent outputs, resolve conflicts, run or confirm final validation, and synthesize one final answer.
+
+## Discovery-to-Implementation Checkpoint
+
+For integrated tasks that start with investigation and continue into code changes, run this checkpoint after `Explore` results are integrated and before editing:
+
+- Convert findings into concrete implementation candidates: affected files/modules, behavior changes, tests, and validation commands.
+- Split candidates into disjoint write scopes and spawn `general-purpose` subagents for any edit-capable scope that can be owned independently, including test-only scopes.
+- Spawn independent validation or review workstreams in parallel when they do not depend on unfinished edits.
+- Keep implementation in the main conversation only for overlapping, tiny, or strictly sequential changes, and record that reason for final Delegation Coverage.
+- Do not count an early read-only wave as sufficient fan-out for a non-trivial coding task when implementation or test edit-capable scopes become available after discovery.
 
 ## Plan-Mode Handoff
 
@@ -218,7 +230,7 @@ Use this structure when relevant, adapting labels to the user's language:
 [Tests or commands run and results; if not run, explain why]
 
 **Delegation Coverage**
-[State which Explore, Plan, general-purpose, test, or validation workstreams were used. For non-trivial coding tasks with no edit-capable or validation subagent, explain why.]
+[State which Explore, Plan, general-purpose, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned edit-capable subagents. For non-trivial coding tasks with no edit-capable or validation subagent, explain why.]
 
 **Recommended Next Step**
 [The most practical next action, or up to three when useful]

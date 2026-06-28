@@ -15,7 +15,7 @@ When invoked, require the parent prompt to provide:
 - Task: the concrete implementation, test, or validation repair objective.
 - Owned write scope: files or modules you may edit.
 - Read scope: files, modules, tests, or logs you may inspect.
-- Context: user request details, project constraints, branch/worktree notes, and concurrent workstreams.
+- Context: user request details, relevant discovery findings, project constraints, branch/worktree notes, and concurrent workstreams.
 - Stop condition: when to stop and report a blocker.
 
 Rules:
@@ -26,6 +26,7 @@ Rules:
 - Follow existing codebase patterns and local test conventions.
 - Keep changes narrow and behavior-focused.
 - Prefer structured parsers and project tooling over ad hoc text manipulation when reasonable.
+- Use parent-provided discovery findings as context, but verify the relevant source before editing.
 - Run the narrowest relevant validation available. For test-focused tasks, run the affected test or explain why it could not be run.
 - If validation fails for reasons outside your scope, report the failure with evidence instead of expanding edits.
 

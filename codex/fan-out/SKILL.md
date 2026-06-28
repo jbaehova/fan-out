@@ -18,6 +18,7 @@ Use this skill as a parallel delegation protocol, not as a persona system. Creat
   - `worker` for bounded implementation, test creation/fixes, validation repairs, or other file edits when the owned write scope can be isolated.
   - `default` only when neither `explorer` nor `worker` fits the delegated task.
 - For non-trivial coding tasks, actively look for implementation and test workstreams that can be delegated to workers. If no worker or validation subagent is used, explain why in the final synthesis.
+- For tasks that include both discovery and code changes, treat discovery agents as the first wave only. After discovery results are integrated, reassess implementation, test, and validation workstreams and spawn workers for independent edit-capable scopes whenever practical.
 - Do not create unnecessary personas.
 - Do not use custom agents unless the user explicitly names one.
 
@@ -26,10 +27,20 @@ Use this skill as a parallel delegation protocol, not as a persona system. Creat
 Use fan-out across the whole workflow, not only during discovery.
 
 1. Discover: use explorers for independent read-only questions, architecture mapping, risk checks, or log/test analysis.
-2. Plan ownership: identify possible implementation, testing, and validation workstreams before spawning agents. Record the intended agent type and owned write scope for each worker candidate.
-3. Implement: default to worker subagents for independent code or test changes with disjoint write scopes. Keep implementation in the main thread only when the change is too small, strictly linear, or would require overlapping edits.
+2. Plan ownership: identify possible implementation, testing, and validation workstreams before spawning agents, then repeat this ownership pass after explorer results narrow the fix. Record the intended agent type and owned write scope for each worker candidate.
+3. Implement: before making edits in the main thread, run the discovery-to-implementation checkpoint below. Default to worker subagents for independent code or test changes with disjoint write scopes. Keep implementation in the main thread only when the change is too small, strictly linear, or would require overlapping edits.
 4. Validate and review: delegate test authoring, test fixes, targeted reruns, read-only review, or log analysis when those tasks can run independently. Use explorers for read-only validation and workers for validation tasks that may edit files.
 5. Integrate: review worker outputs, resolve conflicts, run or confirm final validation, and synthesize one final answer.
+
+## Discovery-to-Implementation Checkpoint
+
+For integrated tasks that start with investigation and continue into code changes, run this checkpoint after explorer results are integrated and before editing:
+
+- Convert findings into concrete implementation candidates: affected files/modules, behavior changes, tests, and validation commands.
+- Split candidates into disjoint write scopes and spawn `worker` subagents for any scope that can be owned independently, including test-only scopes.
+- Spawn independent validation or review workstreams in parallel when they do not depend on unfinished edits.
+- Keep implementation in the main thread only for overlapping, tiny, or strictly sequential changes, and record that reason for final Delegation Coverage.
+- Do not count an early explorer-only wave as sufficient fan-out for a non-trivial coding task when implementation or test worker scopes become available after discovery.
 
 ## Plan-Mode Handoff
 
@@ -125,6 +136,9 @@ Owned write scope:
 Read scope:
 [files/modules/tests/logs the worker may inspect]
 
+Context:
+[relevant discovery findings, user request details, project constraints, active branch/worktree notes, and concurrent workstreams]
+
 Rules:
 - You are not alone in the codebase. Other agents or the main agent may edit nearby files.
 - Do not revert, overwrite, or broad-format changes made by others.
@@ -171,7 +185,7 @@ Use this structure when relevant, adapting labels to the user's language:
 [Tests or commands run and results; if not run, explain why]
 
 **Delegation Coverage**
-[State which explorer, worker, test, or validation workstreams were used. For non-trivial coding tasks with no worker or validation subagent, explain why.]
+[State which explorer, worker, test, or validation workstreams were used, including whether the post-discovery implementation checkpoint spawned workers. For non-trivial coding tasks with no worker or validation subagent, explain why.]
 
 **Recommended Next Step**
 [The most practical next action, or up to three when useful]
